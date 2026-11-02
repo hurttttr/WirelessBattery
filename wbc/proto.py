@@ -859,6 +859,63 @@ def fd_mode(ifaces=None):
     return None
 
 
+# ---------------------------------------------------------------- 充电趋势推断
+#
+# 飞智手柄的固件在 2.4G 下**不置充电位**：实测"插着充电线"和"没插线"两种状态，
+# 0xEC 信息回包逐字节相同（只有第 18 字节的滚动计数在变），`04 FE` 实时帧里
+# 第 11~15 字节是陀螺仪/加速度计，也不含电量。所以纯靠协议问不出充电状态。
+#
+# 但电量本身是实时的，而充电时电量只会往上走。于是用"最近这段时间里涨过一档"
+# 反推正在充电——代价是有延迟（每一档 20%，约 20~25 分钟才挪一格），
+# 好处是只要设备在充电就一定会命中。推断出来的结果必须跟硬件标志区分开，
+# 不能让人以为这是手柄自己说的。
+
+CHARGE_TREND_WINDOW = 2400.0        # 40 分钟：够跨过一次 20% 的台阶
+CHARGE_TREND_MAX_SAMPLES = 64
+
+_charge_hist = {}
+_charge_lock = threading.Lock()
+
+
+def _charge_trend(key, percent, ts=None):
+    """按电量走势推断充电状态：True 在充 / False 没充 / None 看不出来。
+
+    只有"窗口内出现过更低的读数"才敢说在充电；反过来"出现过更高的读数"
+    才敢说没充。一次读数说明不了任何事，返回 None。
+    """
+    if percent is None:
+        return None
+    ts = ts or time.time()
+    with _charge_lock:
+        hist = _charge_hist.setdefault(key, [])
+        hist.append((ts, percent))
+        hist[:] = [(t, v) for t, v in hist
+                   if ts - t <= CHARGE_TREND_WINDOW][-CHARGE_TREND_MAX_SAMPLES:]
+        low = min(v for _, v in hist)
+        high = max(v for _, v in hist)
+    if percent > low:
+        return True
+    if percent < high:
+        return False
+    return None
+
+
+def _fd_charge_state(charging, wired, pct, key="pad"):
+    """把三个来源合成最终的充电状态，返回 (状态, 来源)。
+
+    优先级：充电位（固件自己说的）> 有线（物理论断）> 电量趋势（推断）。
+    都给不出时返回 (None, None)——宁可不显示，也不谎报"未充电"。
+    """
+    if charging:
+        return True, "flag"
+    if wired:
+        return True, "wired"
+    trend = _charge_trend(key, pct)
+    if trend is not None:
+        return trend, "trend"
+    return None, None
+
+
 def read_gamepad(iface=None, timeout_ms=900, attempts=3):
     """读飞智手柄电量。"""
     if iface is None:
@@ -909,19 +966,21 @@ def read_gamepad(iface=None, timeout_ms=900, attempts=3):
                 got = fd_parse(resp, offset)
                 if got:
                     pct, charging, wired, idx, frame = got
-                    # 文档说高 4 位 == 1 是充电中。本机实测不成立：手柄红灯常亮
-                    # （确确实实在充电）时这一位是 0。所以只在这个位真的置起来
-                    # 时才说\"充电中\"，否则标 Unknown——不拿一个错的\"未充电\"骗人。
-                    if not charging:
-                        charging = None
-                    dbg("飞智电量 %d%%（档位 %d）%s  帧=%s" % (
-                        pct, pct // 20, "充电中" if charging else "充电状态未知",
-                        frame[:16].hex(" ")))
+                    # 三条来源，优先级从高到低：
+                    #   1) 充电位真的置起来了（固件自己说的）
+                    #   2) conn == 1，有线连接——物理上必然在充电
+                    #   3) 电量在涨。固件在 2.4G 下不给充电位，这是唯一能覆盖
+                    #      "用充电头充电"场景的办法，代价是有 20~25 分钟延迟。
+                    # 都拿不到就给未知——不拿一个错的"未充电"骗人。
+                    charging, src = _fd_charge_state(charging, wired, pct)
+                    dbg("飞智电量 %d%%（档位 %d）充电=%s 来源=%s  帧=%s" % (
+                        pct, pct // 20, charging, src, frame[:16].hex(" ")))
                     return _target_reading(
                         "pad", ok=True, percent=pct,
                         source="0x%02X 查询 · 第 %d 字节 · 6 档（20%% 粒度）"
                                % (FD_CMD_INFO, idx),
-                        extra={"charging": charging, "online": True, "wired": wired,
+                        extra={"charging": charging, "charge_src": src,
+                               "online": True, "wired": wired,
                                "level": pct // 20, "frame": frame})
                 try:
                     reader.begin()
@@ -1616,6 +1675,18 @@ def selftest():
     live = bytearray(real)
     live[1] = 0xFE                        # 实时状态帧不能被当成回应
     check("实时帧（04 FE）要忽略", fd_parse(bytes(live)) is None)
+
+    # 充电状态的三条来源
+    check("有线连接直接算充电（conn=1）",
+          _fd_charge_state(False, True, 80, "sel_w") == (True, "wired"))
+    check("充电位置位优先于有线",
+          _fd_charge_state(True, True, 80, "sel_w") == (True, "flag"))
+    check("一次读数不猜充电", _fd_charge_state(False, False, 60, "sel_t") == (None, None))
+    check("电量涨了一档 -> 推断充电中",
+          _fd_charge_state(False, False, 80, "sel_t") == (True, "trend"))
+    check("电量掉了 -> 推断未充电",
+          _fd_charge_state(False, False, 40, "sel_t2") == (None, None)
+          and _fd_charge_state(False, False, 20, "sel_t2") == (False, "trend"))
 
     print()
     if fails:

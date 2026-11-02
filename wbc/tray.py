@@ -167,7 +167,15 @@ class TrayHost(threading.Thread):
         r = self.app.get_reading(key)
         name = r.name or key
         if r.ok:
-            return "%s：%d%%（%s）" % (name, r.percent, r.stamp)
+            extra = getattr(r, "extra", None) or {}
+            tag = ""
+            if extra.get("charging") is True:
+                tag = " 充电中（推断）" if extra.get("charge_src") == "trend" else " 充电中"
+            elif extra.get("charging") is False:
+                tag = " 未充电"
+            elif extra.get("online") is False:
+                tag = " 离线"
+            return "%s：%d%%%s（%s）" % (name, r.percent, tag, r.stamp)
         note = r.note or "未连接"
         return "%s：%s（%s）" % (name, note, r.stamp)
 

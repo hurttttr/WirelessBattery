@@ -52,7 +52,11 @@ def run_once(show_time=False):
         name = _pad(r.name or p.get("name") or key, 22)
         vidpid = "(%04X:%04X)" % (p.get("vid", 0), p.get("pid", 0))
         if r.ok:
-            extra = " 充电中" if r.extra.get("charging") else ""
+            extra = ""
+            if r.extra.get("charging") is True:
+                extra = " 充电中（推断）" if r.extra.get("charge_src") == "trend" else " 充电中"
+            elif r.extra.get("charging") is False:
+                extra = " 未充电"
             rows.append("%s %s  %3d%%%s   %s" % (name, vidpid, r.percent, extra, r.source))
         else:
             rows.append("%s %s   --    %s" % (name, vidpid, r.note or "读取失败"))
