@@ -1,0 +1,8 @@
+# 仓库内统一按 LF 存储；Windows 工作区按 CRLF 检出
+* text=auto eol=crlf
+
+*.py    text eol=crlf
+*.md    text eol=crlf
+*.json  text eol=crlf
+*.ico   binary
+*.png   binary

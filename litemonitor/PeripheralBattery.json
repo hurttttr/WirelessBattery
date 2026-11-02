@@ -1,0 +1,39 @@
+{
+  "id": "PeripheralBattery",
+  "meta": {
+    "name": "无线外设电量",
+    "version": "1.0",
+    "author": "my_devices.py",
+    "description": "读取本机 2.4G 无线外设的电量。当前检测到：飞智手柄。需要在本机运行 my_devices.py --serve（默认 http://127.0.0.1:18763/battery）。"
+  },
+  "execution": {
+    "type": "chain",
+    "interval": 30,
+    "min_interval": 10,
+    "steps": [
+      {
+        "id": "fetch",
+        "url": "http://127.0.0.1:18763/battery",
+        "method": "GET",
+        "response_format": "json",
+        "cache_minutes": 0,
+        "extract": {
+          "pad": "pad",
+          "pad_state": "pad_state",
+          "pad_mark": "pad_mark",
+          "pad_text": "pad_text"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "key": "pad",
+      "label": "🎮 飞智手柄",
+      "short_label": "🎮",
+      "format_val": "{{pad_mark}}{{pad}}",
+      "color": "{{pad_state}}",
+      "unit": "%"
+    }
+  ]
+}
