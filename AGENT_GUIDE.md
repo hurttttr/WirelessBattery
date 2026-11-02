@@ -65,7 +65,7 @@ python my_devices.py --status   # 里面的"开机自启"一节会显示它实�
 | `wbc/logx.py` | 46 | 调试输出开关 | 极少 |
 | `PROTOCOLS.md` | 566 | 六台设备的协议汇编 + 逆向方法论 | **适配完新设备必须更新** |
 | `LITEMONITOR.md` | 283 | LiteMonitor 接入手册 | 改插件行为时更新 |
-| `README.md` | 280 | 面向人的门面：特性、设备表、CLI、FAQ | 加设备 / 改 CLI / 改定位时同步 |
+| `README.md` | 282 | 面向人的门面：特性、设备表、CLI、FAQ | 加设备 / 改 CLI / 改定位时同步 |
 
 > 行数只作为规模参考，会随改动漂移；要准确值就 `wc -l wbc/*.py my_devices.py *.md`。
 
