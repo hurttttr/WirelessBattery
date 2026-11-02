@@ -189,6 +189,8 @@ python my_devices.py --make-plugin    # 按现场设备生成插件
 WirelessBattery/
 ├── my_devices.py          CLI 入口、参数分发、文字排版
 ├── wbc/
+│   ├── __init__.py        版本号与 APP_NAME / APP_ID
+│   ├── app.py             进程装配（单实例、线程模型、退出）
 │   ├── proto.py           协议层：PROFILES 清单 + 各厂商读取器 + read_all + 自检
 │   ├── hid.py             HID 枚举、HidController（写）、OverlappedReader（异步读）
 │   ├── win32.py           ctypes 封装：SetupAPI / User32 / GDI / Shell / COM
@@ -202,12 +204,13 @@ WirelessBattery/
 │   ├── links.py           桌面链接（symlink → junction → 硬链接）
 │   ├── settings.py        settings.json / calibration.json
 │   ├── theme.py           DPI 缩放、字体、配色
-│   ├── logx.py            调试输出开关
-│   └── app.py             进程装配（单实例、线程模型、退出）
+│   └── logx.py            调试输出开关
 ├── litemonitor/           LiteMonitor 插件样例
+├── README.md              门面与使用手册（本文件）
 ├── PROTOCOLS.md           六台设备的协议汇编 + 逆向方法论
-├── LITEMONITOR.md         桥与插件接入手册
-└── AGENT_GUIDE.md         给 AI Agent 的部署 / 适配手册
+├── AGENT_GUIDE.md         给 AI Agent 的部署 / 适配手册
+├── LITEMONITOR.md         LiteMonitor 桥与插件接入手册
+└── LICENSE                MIT
 ```
 
 运行时数据（`settings.json` / `calibration.json`）写在
@@ -267,13 +270,52 @@ A：Python 不热加载，重启进程。
 
 ---
 
-## 文档
+## 文档地图
 
-| 文件 | 读者 | 内容 |
-|---|---|---|
-| [`PROTOCOLS.md`](PROTOCOLS.md) | 想抄协议的人 / 开发者 | 六台设备的完整协议、真实报文样本、可复制的解析代码、通用坑 |
-| [`AGENT_GUIDE.md`](AGENT_GUIDE.md) | AI Agent | 硬约束、环境自检、部署流程、九步适配法、验收命令、坑表 |
-| [`LITEMONITOR.md`](LITEMONITOR.md) | 接 LiteMonitor 的人 | 为什么不能做纯 JSON 插件、桥的字段、充电显示、排障 |
+仓库根目录一共四份 Markdown，**读者不一样，不用通读**。先认准自己是谁：
+
+| 文档 | 写给谁 | 用途 | 什么时候读 |
+|---|---|---|---|
+| [`README.md`](README.md) | 使用者 / 刚接触项目的人 | **门面与使用手册**：这是什么、支持哪些设备、怎么跑、有哪些命令 | 第一次打开这个仓库 |
+| [`PROTOCOLS.md`](PROTOCOLS.md) | 想抄协议的人、要逆自己设备的人 | **协议查表**：六台设备的接口条件、帧格式、真实报文、可复制的解析代码 | 要在别的工程里读这些设备，或自己动手抓一台新的 |
+| [`AGENT_GUIDE.md`](AGENT_GUIDE.md) | AI Agent | **操作手册**：硬约束、环境自检、部署顺序、九步适配法、验收清单、坑表、故障树 | Agent 要独立完成"部署跑通"或"适配新设备" |
+| [`LITEMONITOR.md`](LITEMONITOR.md) | 接 LiteMonitor 的人 | **接入手册**：为什么只能走本地 HTTP 桥、JSON 字段、颜色阈值、充电显示 | 想把电量显示在任务栏上 |
+
+### 各文档讲什么
+
+**`README.md`（本文件）— 门面**
+
+为什么不用现成方案（驱动 / hidapi / 标准 HID 电池页三条路的坑）· 九条特性 · 设备速查表 ·
+三种形态与托盘交互 · 完整 CLI 选项 · 开机自启与桌面链接 · 五步适配速览 · 设计约束 · FAQ
+
+**`PROTOCOLS.md`（12 节）— 协议查表**
+
+- **§0 速查表**：六台设备的 VID:PID、方案、交互模型、通道、报文、电量位、充电位一屏看完
+- **§1 通用坑**：六条踩过的坑 + 一条"同一设备可能有多套 VID:PID"的提醒。
+  最要命的是「同一句柄上阻塞读 + 并发写会直接杀掉进程」和「异步读超时后不重新挂起就永久失聪」
+- **§2–§7 一台设备一节**：接口定位条件 → 帧格式 → **真实报文原文** → 解析代码 → 命令地图 → 边界情况。
+  解析函数只依赖 `bytes`，可以整段抄到别的工程
+- **§8 兜底链**（换设备时按顺序试）、**§9 逆向方法论**、**§10 x64 HID 结构体两个陷阱**、**§11 参考实现**
+
+**`AGENT_GUIDE.md`（10 节）— 操作手册**
+
+- **§0 硬约束**（违反即失败）、**§1 环境自检**（必须 64 位 Python + 有 tkinter）
+- **§2 项目结构表**（20 个文件各改哪里，含文档）+ `PROFILES` 的数据结构约定
+- **§3 部署三步**：跑起来 → 装常驻 → 接 LiteMonitor，每步带期望输出
+- **§4 适配新设备九步**：问三件事 → 枚举接口 → 判交互模型 → 被动抓包 → 主动探测 →
+  定位电量字节 → 定位充电位 → 落地 5 处代码 → 收尾
+- **§5 验收清单**（6 条，含托盘启停自测脚本）、**§6 已知坑**（14 条，症状 → 原因 → 规避）、
+  **§7 故障树**、**§8 汇报模板**、**§9 Definition of Done**
+
+**`LITEMONITOR.md`（8 节）— 接入手册**
+
+- **§1** 为什么做不成纯 JSON 插件（LiteMonitor 源码里没有 `Process.Start`，只有 `HttpClient`）
+- **§2 三步接入**：起本地接口 → 生成并安装插件 → 加监控项
+- **§3** 接口 JSON 的每个字段、**§4** 充电时能显示什么 / 不能显示什么、**§5** 为什么要缓存
+- **§6** 换成自己的设备、**§7** FAQ、**§8** 只读性说明（这个桥不会写任何东西）
+
+> 三份技术文档分工明确：`AGENT_GUIDE.md` 管流程、`PROTOCOLS.md` 查协议、`LITEMONITOR.md` 管接入。
+> 只想用、不想改代码的话，看完本文件就够了。
 
 ---
 
