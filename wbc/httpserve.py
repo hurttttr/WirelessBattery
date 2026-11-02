@@ -75,8 +75,7 @@ def build_payload(readings):
         # 想用的人把插件里的 {{xxx_state}} 换成 {{xxx_state_charge}} 即可。
         flat[key + "_state_charge"] = "0" if charging is True else level_state(pct)
         flat[key + "_mark"] = "⚡" if charging is True else ""
-        flat[key + "_text"] = ("充电中（推断）" if extra.get("charge_src") == "trend"
-                               else "充电中") if charging is True else ""
+        flat[key + "_text"] = "充电中" if charging is True else ""
         flat[key + "_charging"] = 1 if charging is True else 0
         flat[key + "_online"] = 1 if (r.ok and online) else 0
         # 设备休眠时会退回"上次读数"：把新鲜度也暴露出去，宿主想显示就显示，不想显示也不误导

@@ -75,8 +75,7 @@ class BatteryCard(tk.Canvas):
             src = "%s · %s" % (reading.source, reading.stamp)
             extra = getattr(reading, "extra", None) or {}
             if extra.get("charging") is True:
-                mark = "充电中（推断）" if extra.get("charge_src") == "trend" else "充电中"
-                src = mark + " · " + src
+                src = "充电中 · " + src
             elif extra.get("charging") is False:
                 src = "未充电 · " + src
             elif extra.get("online") is False:

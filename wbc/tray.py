@@ -170,7 +170,7 @@ class TrayHost(threading.Thread):
             extra = getattr(r, "extra", None) or {}
             tag = ""
             if extra.get("charging") is True:
-                tag = " 充电中（推断）" if extra.get("charge_src") == "trend" else " 充电中"
+                tag = " 充电中"
             elif extra.get("charging") is False:
                 tag = " 未充电"
             elif extra.get("online") is False:

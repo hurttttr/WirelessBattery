@@ -54,7 +54,7 @@ def run_once(show_time=False):
         if r.ok:
             extra = ""
             if r.extra.get("charging") is True:
-                extra = " 充电中（推断）" if r.extra.get("charge_src") == "trend" else " 充电中"
+                extra = " 充电中"
             elif r.extra.get("charging") is False:
                 extra = " 未充电"
             rows.append("%s %s  %3d%%%s   %s" % (name, vidpid, r.percent, extra, r.source))
