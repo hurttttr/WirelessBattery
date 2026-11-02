@@ -46,8 +46,10 @@ python my_devices.py --status   # 里面的"开机自启"一节会显示它实�
 
 | 文件 | 行数 | 职责 | 什么时候改 |
 |---|---:|---|---|
-| `my_devices.py` | 565 | CLI 入口、参数分发、`--capture/--watch/--serve` 等子命令 | 加新的 CLI 功能 |
-| `wbc/proto.py` | 1317 | **协议层**：`PROFILES` 设备清单、各厂商读取器、`read_all()`、自检 | **适配新设备主要改这里** |
+| `my_devices.py` | 571 | CLI 入口、参数分发、`--capture/--watch/--serve` 等子命令 | 加新的 CLI 功能 |
+| `wbc/__init__.py` | 20 | `__version__`、`APP_NAME`、`APP_ID` | 改应用名 / 版本号 |
+| `wbc/app.py` | 343 | 进程装配：单实例锁、线程模型、面板唤起、退出路径 | 改运行时生命周期 |
+| `wbc/proto.py` | 1625 | **协议层**：`PROFILES` 设备清单、各厂商读取器、`read_all()`、自检 | **适配新设备主要改这里** |
 | `wbc/hid.py` | 456 | HID 枚举、`HidController`（写）、`OverlappedReader`（异步读） | 极少需要改 |
 | `wbc/win32.py` | 611 | ctypes 封装：SetupAPI / User32 / GDI / Shell / COM | 极少需要改 |
 | `wbc/tray.py` | 367 | 托盘宿主窗口、`SetTimer`、`Shell_NotifyIcon` | 加托盘交互 |
@@ -55,14 +57,17 @@ python my_devices.py --status   # 里面的"开机自启"一节会显示它实�
 | `wbc/panel.py` | 350 | 简洁面板（两张/多张卡片） | 改面板布局 |
 | `wbc/debugui.py` | 465 | 完整调试版（列设备、转储、探测、标定） | 加调试工具 |
 | `wbc/httpserve.py` | 211 | 本地 HTTP 桥（给 LiteMonitor 这类宿主） | 改 JSON 字段 |
-| `wbc/lmplugin.py` | 150 | 按当前设备生成 LiteMonitor 插件 JSON | 改插件图标/命名 |
+| `wbc/lmplugin.py` | 152 | 按当前设备生成 LiteMonitor 插件 JSON | 改插件图标/命名 |
 | `wbc/autostart.py` | 368 | 启动文件夹 `.lnk`（纯 ctypes COM） | 改自启行为 |
 | `wbc/links.py` | 141 | 桌面目录/文件链接（symlink → junction → 硬链接） | 极少 |
 | `wbc/settings.py` | 128 | `settings.json` / `calibration.json` | 加配置项 |
 | `wbc/theme.py` | 82 | DPI 缩放、字体、配色 | 改视觉 |
 | `wbc/logx.py` | 46 | 调试输出开关 | 极少 |
-| `PROTOCOLS.md` | 455 | 5 台设备的协议汇编 + 逆向方法论 | **适配完新设备必须更新** |
-| `LITEMONITOR.md` | 281 | LiteMonitor 接入手册 | 改插件行为时更新 |
+| `PROTOCOLS.md` | 566 | 六台设备的协议汇编 + 逆向方法论 | **适配完新设备必须更新** |
+| `LITEMONITOR.md` | 283 | LiteMonitor 接入手册 | 改插件行为时更新 |
+| `README.md` | 280 | 面向人的门面：特性、设备表、CLI、FAQ | 加设备 / 改 CLI / 改定位时同步 |
+
+> 行数只作为规模参考，会随改动漂移；要准确值就 `wc -l wbc/*.py my_devices.py *.md`。
 
 **数据结构约定**：`proto.PROFILES` 是设备清单的唯一真相，每条形如
 
