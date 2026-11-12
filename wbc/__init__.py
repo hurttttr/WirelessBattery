@@ -18,7 +18,7 @@
 import os
 import sys
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 APP_NAME = "无线外设电量"
 APP_ID = "WirelessBattery"
 
