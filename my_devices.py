@@ -23,10 +23,14 @@ if HERE not in sys.path:
 
 from wbc import console  # noqa: E402
 
-# 一份 exe 两种形态：托盘模式下把系统为本进程新建的控制台藏掉，别弹黑窗。
-# 必须排在 proto 前面 —— 那几个模块导入要几十毫秒，黑窗就是在这段时间露出来的。
+# 一份 exe 两种形态（GUI 子系统）：
+#   托盘模式 —— 本来就没有控制台，安静跑；hide_if_ours 只是给 console 子系统兜底
+#   命令行模式 —— 先挂到父控制台，否则 --once / --status 的输出会直接丢掉
+# 必须排在 proto 前面：挂控制台要赶在其他模块 import 之前，早挂早能打印。
 if console.quiet_argv():
     console.hide_if_ours()
+else:
+    console.attach_parent()
 
 from wbc import app_dir, frozen, logx  # noqa: E402
 from wbc import proto  # noqa: E402

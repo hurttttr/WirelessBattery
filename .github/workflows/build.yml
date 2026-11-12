@@ -62,44 +62,10 @@ jobs:
       - name: 打包
         run: python build.py ${{ matrix.args }}
 
+      # 用 Python 脚本而不是 pwsh：exe 是 GUI 子系统，PowerShell 的 `&` 不等它
+      # 结束，拿不到输出也读不准退出码。subprocess 会正常等待。
       - name: 冒烟测试
-        shell: pwsh
-        run: |
-          if ('${{ matrix.dist }}' -eq 'onefile') {
-            $exe = 'dist/WirelessBattery.exe'
-          } else {
-            $exe = 'dist/WirelessBattery/WirelessBattery.exe'
-          }
-          if (-not (Test-Path $exe)) { throw "没找到产物：$exe" }
-
-          Write-Host '== --version =='
-          $v = & $exe --version
-          Write-Host $v
-          # 打包后 argparse 的 prog 必须是 exe 名，不能还是 my_devices.py
-          if ("$v" -notlike 'WirelessBattery.exe*') { throw "程序名不对：$v" }
-
-          Write-Host '== --selftest =='
-          & $exe --selftest
-          if ($LASTEXITCODE -ne 0) { throw "selftest 退出码 $LASTEXITCODE" }
-
-          Write-Host '== --status =='
-          & $exe --status
-          if ($LASTEXITCODE -ne 0) { throw "--status 退出码 $LASTEXITCODE" }
-
-          # --selftest 只跑协议层，碰不到 GUI —— tcl/tk 万一没被 PyInstaller 收进去，
-          # 上面几步照样全绿，但用户双击就是「没有 tkinter」。这里直接查产物结构。
-          # 本机 Tcl 8.6 是 tcl86t.dll + 数据目录，跑器的 Tcl 9.0 是 tcl90.dll +
-          # tcl9tk90.dll（脚本库内嵌），所以别写死文件名。
-          if ('${{ matrix.dist }}' -eq 'onedir') {
-            $tkd = 'dist/WirelessBattery/_internal'
-            $dlls = (Get-ChildItem $tkd -Filter '*.dll' -ErrorAction SilentlyContinue).Name
-            if (-not (Get-ChildItem $tkd -Filter '_tkinter.pyd' -ErrorAction SilentlyContinue)) {
-              throw "产物里没有 _tkinter.pyd"
-            }
-            if (-not ($dlls -match '^tcl')) { throw "产物里没有 tcl 运行库：$dlls" }
-            if (-not ($dlls -match 'tk'))   { throw "产物里没有 tk 运行库：$dlls" }
-            Write-Host 'tk 运行库齐全'
-          }
+        run: python .github/smoke.py --dist ${{ matrix.dist }}
 
       - name: 压缩
         shell: pwsh

@@ -7,12 +7,12 @@
 | 文件名 | `WirelessBattery-win64.zip` | `WirelessBattery-win64-onefile.zip` |
 | 解压后 | `WirelessBattery\` 文件夹（exe + `_internal\`） | 就一个 `WirelessBattery.exe` |
 | 启动速度 | 约 0.15 秒 | 约 2.5 秒（每次启动都要先解压到临时目录） |
-| 启动时的黑窗 | 一闪而过 | 会停留 1~2 秒（就是那段解包时间） |
+| 命令行黑窗 | 不会出现 | 不会出现 |
 | 杀软误报 | 较少 | 偶有（自解压结构容易被判成可疑） |
 | 适合 | 装在自己电脑上长期用、要开机自启 | 拷给别人、放 U 盘、临时用一次 |
 
 > 目录版解压后**整个文件夹一起放着**，别只把 exe 拖出来——它离不开旁边的 `_internal\`。
-> 两个包启动时都不会留下命令行窗口，只是单文件版那个窗口要多待一会儿。
+> 两个包双击都不会出现命令行窗口；单文件版只是启动慢一些。
 
 ## 用法
 
@@ -30,7 +30,7 @@ Win11 默认把新图标收进溢出区（任务栏右侧的 `^`），去那里�
 WirelessBattery.exe --install
 ```
 
-其它常用命令（在 cmd 里跑，会有输出）：
+其它常用命令（在 cmd / PowerShell 里跑）：
 
 ```bat
 WirelessBattery.exe --once       :: 读一次，直接打印电量
@@ -38,6 +38,9 @@ WirelessBattery.exe --status     :: 设备 / 自启 / 链接 状态
 WirelessBattery.exe --selftest   :: 不依赖硬件的协议自检
 WirelessBattery.exe --uninstall  :: 撤销自启和桌面链接
 ```
+
+> 程序是 GUI 程序，**命令行不会有黑窗**，代价是 cmd 不会等它跑完：提示符会先
+> 回来，输出紧跟着打出来。想按退出码写脚本的话，请用源码运行。
 
 ## 说明
 

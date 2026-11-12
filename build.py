@@ -5,9 +5,11 @@
     python build.py             # 目录版 dist/WirelessBattery/（冷启动 ~240ms，推荐）
     python build.py --onefile   # 单文件 dist/WirelessBattery.exe（分发省事，启动慢 ~0.4s）
 
-产物是 **console 子系统**：从 cmd / PowerShell 启动时它会等程序跑完、退出码可读；
-双击和开机自启时由 `wbc.console` 把系统新建的控制台藏掉，看不到黑窗。
-一份 exe 两种形态，不需要额外的 pythonw 版本。
+产物是 **GUI 子系统**（`--windowed`）：双击和开机自启完全不会出现黑窗；
+从终端启动时由 `wbc.console.attach_parent()` 挂到父控制台，`--once / --status`
+这些照样能打印。一份 exe 两种形态，不需要额外的 pythonw 版本。
+
+代价：cmd 不会等它跑完，提示符立刻返回 —— 靠退出码判断的脚本会受影响。
 
 打包需要 PyInstaller，而且必须装在「带 tkinter 的那个解释器」里。
 本脚本会自己挑解释器，挑不到会直接告诉你该装什么：
@@ -145,7 +147,7 @@ def main():
 
     cmd = [py, "-m", "PyInstaller",
            "--noconfirm", "--clean",
-           "--console",                       # 关键：cmd 才会等它跑完并拿到退出码
+           "--windowed",                      # GUI 子系统：双击/自启完全不会有黑窗
            "--name", NAME,
            "--distpath", dist,
            "--workpath", work,
