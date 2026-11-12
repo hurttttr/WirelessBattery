@@ -12,7 +12,7 @@
 
 | 约束 | 说明 |
 |---|---|
-| **零第三方依赖** | 只用 Python 标准库 + `ctypes` + `tkinter`。**不要** `pip install hidapi/pywin32/Pillow/pysystray` |
+| **零第三方依赖** | 只用 Python 标准库 + `ctypes` + `tkinter`。**不要** `pip install hidapi/pywin32/Pillow/pysystray`。打包用的 PyInstaller 是构建期工具，不算运行时依赖（见 `build.py`）|
 | **不写日志文件** | 任何情况下不在项目目录产生 `.log`。调试信息只在 `--debug` 时打到控制台 |
 | **不擅自改用户的系统设置** | 开机自启、桌面链接只在用户明确要求时创建；状态不一致时**只报告不纠正** |
 | **不猜协议** | 电量字节/充电位必须有实测证据（充电递增、拔插对比）。拿不到就说拿不到 |
@@ -46,8 +46,11 @@ python my_devices.py --status   # 里面的"开机自启"一节会显示它实�
 
 | 文件 | 行数 | 职责 | 什么时候改 |
 |---|---:|---|---|
-| `my_devices.py` | 571 | CLI 入口、参数分发、`--capture/--watch/--serve` 等子命令 | 加新的 CLI 功能 |
-| `wbc/__init__.py` | 20 | `__version__`、`APP_NAME`、`APP_ID` | 改应用名 / 版本号 |
+| `my_devices.py` | 611 | CLI 入口、参数分发、`--capture/--watch/--serve` 等子命令 | 加新的 CLI 功能 |
+| `build.py` | 186 | 打包成一份 exe：自动挑带 tkinter 的解释器、生成图标、裁模块 | 改打包参数 / 排除项 |
+| `.github/workflows/build.yml` | 134 | CI：两个跑器分别出目录版和单文件版，打 tag 自动发 Release | 改 Python 版本 / 触发条件 |
+| `wbc/__init__.py` | 51 | `__version__`、`APP_NAME`、`APP_ID`、`frozen()` / `app_dir()` | 改应用名 / 版本号 / 路径语义 |
+| `wbc/console.py` | 83 | 一份 exe 两种形态：托盘模式藏掉系统新建的控制台 | 极少 |
 | `wbc/app.py` | 343 | 进程装配：单实例锁、线程模型、面板唤起、退出路径 | 改运行时生命周期 |
 | `wbc/proto.py` | 1625 | **协议层**：`PROFILES` 设备清单、各厂商读取器、`read_all()`、自检 | **适配新设备主要改这里** |
 | `wbc/hid.py` | 456 | HID 枚举、`HidController`（写）、`OverlappedReader`（异步读） | 极少需要改 |

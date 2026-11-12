@@ -6,3 +6,6 @@
 *.json  text eol=crlf
 *.ico   binary
 *.png   binary
+
+# CI 工作流必须是 LF：linux 跑器上的 bash 步骤会被 CRLF 的 \r 弄坏
+.github/workflows/*  text eol=lf

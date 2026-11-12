@@ -21,6 +21,8 @@ import ctypes
 import os
 import sys
 
+from . import console
+from . import frozen
 from . import logx
 from . import settings
 from . import win32 as wx
@@ -40,6 +42,7 @@ SL_GET_WORKINGDIR = 8
 SL_SET_WORKINGDIR = 9
 SL_GET_ARGUMENTS = 10
 SL_SET_ARGUMENTS = 11
+SL_SET_SHOWCMD = 15
 SL_SET_ICONLOCATION = 17
 SL_SET_PATH = 20
 PF_LOAD = 5
@@ -77,8 +80,12 @@ def _co_init():
 
 
 def create_shortcut(lnk_path, target, arguments="", workdir="",
-                    description="", icon_path=None, icon_index=0):
-    """用纯 ctypes 创建 .lnk。返回 lnk_path。"""
+                    description="", icon_path=None, icon_index=0, show_cmd=None):
+    """用纯 ctypes 创建 .lnk。返回 lnk_path。
+
+    show_cmd 交给 Shell 决定启动时窗口怎么显示：传 0（SW_HIDE）后，
+    控制台子系统的程序从快捷方式启动也不会露出黑窗。
+    """
     _co_init()
     clsid = wx.guid_from_string(CLSID_ShellLink)
     iid_link = wx.guid_from_string(IID_IShellLinkW)
@@ -102,6 +109,8 @@ def create_shortcut(lnk_path, target, arguments="", workdir="",
             _vt(punk, SL_SET_WORKINGDIR, HRESULT, ctypes.c_wchar_p)(punk, workdir)
         if description:
             _vt(punk, SL_SET_DESCRIPTION, HRESULT, ctypes.c_wchar_p)(punk, description)
+        if show_cmd is not None:
+            _vt(punk, SL_SET_SHOWCMD, HRESULT, ctypes.c_int)(punk, int(show_cmd))
         if icon_path:
             _vt(punk, SL_SET_ICONLOCATION, HRESULT, ctypes.c_wchar_p, ctypes.c_int)(
                 punk, str(icon_path), int(icon_index))
@@ -178,8 +187,12 @@ def python_executable(windowed=True):
 
     还要确认目标解释器真的能 import tkinter：有些精简版 Python 没有 tkinter，
     用它写进快捷方式的话，pythonw 下会静默失败，用户什么都看不到。
+
+    打包成 exe 后没有解释器可挑：sys.executable 就是程序本身。
     """
     global _PY_CACHE
+    if frozen():
+        return os.path.abspath(sys.executable)
     if _PY_CACHE:
         return _PY_CACHE
 
@@ -244,8 +257,27 @@ def _candidate_interpreters(windowed=True):
 
 
 def script_path():
+    """要运行的东西：源码态是 my_devices.py，打包后是 exe 自己。"""
+    if frozen():
+        return os.path.abspath(sys.executable)
     # wbc/autostart.py -> 上一级就是项目目录
     return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "my_devices.py"))
+
+
+def launch_parts(windowed=True, extra_args=""):
+    """开机启动的 (可执行文件, 参数, 工作目录)。
+
+    源码运行：pythonw.exe      +  "D:\\...\\my_devices.py --tray"
+    打包运行：WirelessBattery.exe +  "--tray"
+              ^ exe 自己就是入口，再把脚本路径当参数传进去会变成未知参数
+    """
+    if frozen():
+        exe = os.path.abspath(sys.executable)
+        return exe, ("--tray" + (extra_args or "")).strip(), os.path.dirname(exe)
+    script = script_path()
+    return (python_executable(windowed),
+            ('"%s" --tray%s' % (script, extra_args or "")).strip(),
+            os.path.dirname(script))
 
 
 # ---- 任务管理器的「启用/禁用」状态
@@ -330,14 +362,17 @@ def enable(extra_args=""):
     """
     path = startup_lnk_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    target, arguments, workdir = launch_parts(windowed=True, extra_args=extra_args)
     create_shortcut(
         path,
-        target=python_executable(windowed=True),
-        arguments='"%s" --tray%s' % (script_path(), extra_args or ""),
-        workdir=os.path.dirname(script_path()),
+        target=target,
+        arguments=arguments,
+        workdir=workdir,
         description=DESCRIPTION,
         icon_path=settings.app_icon_path(),
         icon_index=0,
+        # 打包后是 console 子系统，让 Shell 启动时直接把窗口藏起来，省掉那一下闪烁
+        show_cmd=console.SW_HIDE if frozen() else None,
     )
     _clear_approved(LNK_NAME)
     dbg("已创建启动项", path)

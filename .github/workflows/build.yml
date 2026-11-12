@@ -1,0 +1,134 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# 同一个分支/tag 只留最新一次，推得快的时候不排队
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 打包 · ${{ matrix.label }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      # Windows 跑器的 stdio 默认按系统代码页解码（en-US 上是 cp1252），
+      # 而 build.py 和 --selftest 都会 print 中文，不设这个会直接 UnicodeEncodeError。
+      # 顺带让日志里的中文正常显示，而不是一堆问号。
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: 目录版
+            dist: onedir
+            args: ''
+            zip: WirelessBattery-win64.zip
+          - label: 单文件版
+            dist: onefile
+            args: --onefile
+            zip: WirelessBattery-win64-onefile.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: x64
+
+      # 打包用的解释器必须带 tkinter，而且必须是 64 位（代码里多处按 x64 结构体布局写死）
+      - name: 环境自检
+        run: |
+          python -c "import sys, tkinter; assert sys.maxsize > 2**32, '需要 64 位 Python'; print(sys.version); print('tk', tkinter.TkVersion)"
+
+      - name: 安装 PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: 协议自检（不碰硬件）
+        run: python my_devices.py --selftest
+
+      # 走仓库自己的 build.py，CI 顺带验证打包脚本没坏
+      - name: 打包
+        run: python build.py ${{ matrix.args }}
+
+      - name: 冒烟测试
+        shell: pwsh
+        run: |
+          if ('${{ matrix.dist }}' -eq 'onefile') {
+            $exe = 'dist/WirelessBattery.exe'
+          } else {
+            $exe = 'dist/WirelessBattery/WirelessBattery.exe'
+          }
+          if (-not (Test-Path $exe)) { throw "没找到产物：$exe" }
+
+          Write-Host '== --version =='
+          $v = & $exe --version
+          Write-Host $v
+          # 打包后 argparse 的 prog 必须是 exe 名，不能还是 my_devices.py
+          if ("$v" -notlike 'WirelessBattery.exe*') { throw "程序名不对：$v" }
+
+          Write-Host '== --selftest =='
+          & $exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "selftest 退出码 $LASTEXITCODE" }
+
+          Write-Host '== --status =='
+          & $exe --status
+          if ($LASTEXITCODE -ne 0) { throw "--status 退出码 $LASTEXITCODE" }
+
+      - name: 压缩
+        shell: pwsh
+        run: |
+          if ('${{ matrix.dist }}' -eq 'onefile') {
+            $src = 'dist/WirelessBattery.exe'
+          } else {
+            $src = 'dist/WirelessBattery'
+          }
+          Compress-Archive -Path $src -DestinationPath '${{ matrix.zip }}' -CompressionLevel Optimal
+          Get-Item '${{ matrix.zip }}' | ForEach-Object { '{0}  {1:N1} MB' -f $_.Name, ($_.Length / 1MB) }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.dist }}
+          path: ${{ matrix.zip }}
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: 发布 Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 列出待发布文件
+        run: ls -lh artifacts
+
+      # 用 gh 而不是第三方 action：少一个供应链依赖
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release 已存在，覆盖附件"
+            gh release upload "$GITHUB_REF_NAME" artifacts/*.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" artifacts/*.zip \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi

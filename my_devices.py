@@ -21,10 +21,32 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from wbc import logx  # noqa: E402
+from wbc import console  # noqa: E402
+
+# 一份 exe 两种形态：托盘模式下把系统为本进程新建的控制台藏掉，别弹黑窗。
+# 必须排在 proto 前面 —— 那几个模块导入要几十毫秒，黑窗就是在这段时间露出来的。
+if console.quiet_argv():
+    console.hide_if_ours()
+
+from wbc import app_dir, frozen, logx  # noqa: E402
 from wbc import proto  # noqa: E402
+from wbc import __version__  # noqa: E402
 
 APP_TITLE = "无线外设电量"
+
+# 用户看得见、可写的目录：源码运行时是项目根目录，打包后是 exe 所在目录。
+# 不要用 HERE —— 打包后它指向包内部（onefile 还是退出即删的临时目录）。
+APP_HOME = app_dir()
+
+# 打包后 stdout 会退回 ANSI 代码页（中文机器上是 GBK），print 到图标字符就抛
+# UnicodeEncodeError。这里只放宽 errors：encoding 不能改成 utf-8，否则往 GBK
+# 控制台写 UTF-8 字节，中文会整段变乱码。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        if _stream is not None and hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------- 文字排版
@@ -272,15 +294,20 @@ def run_watch(target, seconds=60):
 def run_make_plugin(plugin_dir=None, port=18763):
     """按当前插着的设备生成 LiteMonitor 插件 JSON。"""
     import shutil
-    from wbc import lmplugin, proto
+    from wbc import lmplugin, proto, settings
 
     keys = lmplugin.present_keys()
     if not keys:
         keys = [p["key"] for p in proto.PROFILES]
         print("提示：当前没检测到任何已知设备，按支持的机型全部生成。")
 
-    out = os.path.join(HERE, "litemonitor", "PeripheralBattery.json")
-    lmplugin.write_plugin(keys, out, port)
+    out = os.path.join(APP_HOME, "litemonitor", "PeripheralBattery.json")
+    try:
+        lmplugin.write_plugin(keys, out, port)
+    except OSError:
+        # 程序装在 Program Files 之类只读位置时退到数据目录
+        out = os.path.join(settings.data_dir(), "litemonitor", "PeripheralBattery.json")
+        lmplugin.write_plugin(keys, out, port)
     print("已生成插件：%s" % out)
     print("  包含 %d 台设备：%s" % (len(keys), "、".join(
         lmplugin.display_for(k, [k])[0] for k in keys)))
@@ -340,7 +367,7 @@ def run_status():
     print("== 桌面链接 ==")
     desktop = wx.desktop_dir()
     d = os.path.join(desktop, links.DIR_LINK_NAME)
-    f1 = os.path.join(desktop, links.FILE_LINK_NAME)
+    f1 = os.path.join(desktop, links.file_link_name())
     f2 = f1 + ".lnk"
     for path, label in ((d, "目录链接"), (f1, "文件链接"), (f2, "文件快捷方式")):
         if os.path.exists(path) or os.path.islink(path):
@@ -353,8 +380,13 @@ def run_status():
 
     print("== 数据目录 ==")
     print("  %s" % settings.data_dir())
-    print("== 项目目录 ==（不应出现 *.log）")
-    junk = [n for n in sorted(os.listdir(HERE)) if n.lower().endswith((".log", ".err", ".out"))]
+    print("== %s ==（不应出现 *.log）" % ("程序目录" if frozen() else "项目目录"))
+    try:
+        names = sorted(os.listdir(APP_HOME))
+    except OSError as e:
+        names = []
+        print("  目录读不到：%s" % e)
+    junk = [n for n in names if n.lower().endswith((".log", ".err", ".out"))]
     if junk:
         for name in junk:
             print("  !! 发现日志文件：%s" % name)
@@ -377,7 +409,11 @@ def run_install(make_links_only=False, serve=False):
             print("创建开机自启失败：%s" % e)
             rc = 1
 
-    results = links.make_desktop_links(HERE, os.path.join(HERE, "my_devices.py"))
+    # 打包后没有 my_devices.py 可指，桌面链接直接指向 exe 自己
+    if frozen():
+        results = links.make_desktop_links(APP_HOME, os.path.abspath(sys.executable))
+    else:
+        results = links.make_desktop_links(HERE, os.path.join(HERE, "my_devices.py"))
     for r in results:
         if r.ok:
             print("桌面链接 %-8s %s -> %s" % (r.kind, r.path, r.target))
@@ -452,7 +488,7 @@ def run_gui(opts):
 
 def build_parser():
     p = argparse.ArgumentParser(
-        prog="my_devices.py",
+        prog=os.path.basename(sys.executable) if frozen() else "my_devices.py",
         description="无线外设电量小工具（2.4G 鼠标 / 键盘 / 耳机，多厂商协议）",
         epilog="默认以托盘方式常驻。不写日志文件，调试信息只在加 --debug 时输出到控制台。",
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -490,7 +526,7 @@ def build_parser():
                     help="按当前插着的设备生成 LiteMonitor 插件 JSON（并尝试自动装到安装目录）")
     g3.add_argument("--plugin-dir", metavar="目录",
                     help="LiteMonitor 的 resources\\plugins 目录（默认自动查找）")
-    g3.add_argument("--version", action="version", version="%(prog)s 1.0.0")
+    g3.add_argument("--version", action="version", version="%(prog)s " + __version__)
     return p
 
 

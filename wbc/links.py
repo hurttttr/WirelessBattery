@@ -11,13 +11,21 @@
 import os
 import subprocess
 
+from . import console
 from . import logx
 from .logx import dbg
 
 DIR_LINK_NAME = "无线外设电量"
 FILE_LINK_NAME = "电量托盘.py"
+FILE_LINK_NAME_FROZEN = "无线外设电量.exe"
 
 CREATE_NO_WINDOW = 0x08000000
+
+
+def file_link_name():
+    """桌面上那个文件链接叫什么 —— 源码运行时是 .py，打包后是 .exe。"""
+    from . import frozen
+    return FILE_LINK_NAME_FROZEN if frozen() else FILE_LINK_NAME
 
 
 class LinkResult(object):
@@ -97,14 +105,22 @@ def make_file_link(link_path, target_file):
         lnk = link_path + ".lnk"
         if os.path.exists(lnk):
             os.remove(lnk)
+        # 目标是 exe 就直指它；是 .py 才需要经解释器带脚本路径
+        if target_file.lower().endswith(".exe"):
+            target, arguments, show_cmd = target_file, "", console.SW_HIDE
+        else:
+            target = autostart.python_executable(windowed=True)
+            arguments = '"%s"' % target_file
+            show_cmd = None
         autostart.create_shortcut(
             lnk,
-            target=autostart.python_executable(windowed=True),
-            arguments='"%s"' % target_file,
+            target=target,
+            arguments=arguments,
             workdir=os.path.dirname(target_file),
             description="无线外设电量面板",
             icon_path=settings.app_icon_path(),
             icon_index=0,
+            show_cmd=show_cmd,
         )
         return LinkResult(True, "shortcut", lnk, target_file,
                           "硬链接跨卷不可用，已改用快捷方式")
@@ -118,7 +134,7 @@ def make_desktop_links(project_dir, script_path, desktop=None):
     desktop = desktop or wx.desktop_dir()
     results = []
     results.append(make_dir_link(os.path.join(desktop, DIR_LINK_NAME), project_dir))
-    results.append(make_file_link(os.path.join(desktop, FILE_LINK_NAME), script_path))
+    results.append(make_file_link(os.path.join(desktop, file_link_name()), script_path))
     return results
 
 
@@ -126,7 +142,11 @@ def remove_desktop_links(desktop=None):
     from . import win32 as wx
     desktop = desktop or wx.desktop_dir()
     removed = []
-    for name in (DIR_LINK_NAME, FILE_LINK_NAME, FILE_LINK_NAME + ".lnk"):
+    # 源码态和打包态的文件名都清一遍，避免切换形态后留下孤儿链接
+    names = (DIR_LINK_NAME,
+             FILE_LINK_NAME, FILE_LINK_NAME + ".lnk",
+             FILE_LINK_NAME_FROZEN, FILE_LINK_NAME_FROZEN + ".lnk")
+    for name in names:
         p = os.path.join(desktop, name)
         if not (os.path.exists(p) or os.path.islink(p)):
             continue

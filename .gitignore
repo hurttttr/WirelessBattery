@@ -22,3 +22,10 @@ desktop.ini
 settings.json
 calibration.json
 *.log
+
+# 打包产物（build.py 生成）
+build/
+dist/
+
+# AI 协作工具的本地数据（项目记忆等，不进版本库）
+.workbuddy/
