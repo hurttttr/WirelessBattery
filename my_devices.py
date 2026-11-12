@@ -363,6 +363,10 @@ def run_status():
     print("  快捷方式：%s" % info["path"])
     if info.get("target"):
         print("  目标：%s %s" % (info["target"], info.get("arguments", "")))
+        # 程序被挪过位置时 .lnk 照样在，只是开机时静默失败 —— 这是"设了自启
+        # 却不生效"最常见的原因，直接指出来比重装一遍有用。
+        if not os.path.exists(info["target"]):
+            print("  !! 目标不存在 —— 开机自启会静默失败，重跑 --install 修好")
 
     print("== 桌面链接 ==")
     desktop = wx.desktop_dir()
@@ -403,8 +407,10 @@ def run_install(make_links_only=False, serve=False):
     if not make_links_only:
         try:
             path = autostart.enable(extra_args=" --serve" if serve else "")
+            info = autostart.read_shortcut(path) or {}
             print("已创建开机自启：%s" % path)
-            print("  任务管理器 →「启动」标签里应当能看到「电量托盘」，可直接启用/禁用")
+            print("  目标：%s %s" % (info.get("target", ""), info.get("arguments", "")))
+            print("  任务管理器 →「启动」里应当能看到这一项，可直接启用/禁用")
         except Exception as e:
             print("创建开机自启失败：%s" % e)
             rc = 1
@@ -414,14 +420,15 @@ def run_install(make_links_only=False, serve=False):
         results = links.make_desktop_links(APP_HOME, os.path.abspath(sys.executable))
     else:
         results = links.make_desktop_links(HERE, os.path.join(HERE, "my_devices.py"))
+    # 桌面链接只是顺手放的快捷方式：跨卷硬链接、同名冲突都可能不成，
+    # 但托盘和自启都不依赖它，别让它把整个安装判成失败。
     for r in results:
         if r.ok:
             print("桌面链接 %-8s %s -> %s" % (r.kind, r.path, r.target))
             if r.message:
                 print("        %s" % r.message)
         else:
-            print("桌面链接失败 %s：%s" % (r.path, r.message))
-            rc = 1
+            print("桌面链接没做成（不影响自启和托盘）：%s —— %s" % (r.path, r.message))
     return rc
 
 

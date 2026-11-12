@@ -327,17 +327,25 @@ class BatteryApp(object):
         dbg("刷新间隔 -> %d 秒" % self.interval)
 
     def set_autostart(self, want):
-        """用户点了复选框才动手；程序自己绝不"自动纠正"启动项。"""
+        """用户点了复选框才动手；程序自己绝不"自动纠正"启动项。
+
+        返回 (是否成功, 失败原因)。原因要一路传到面板上——只给一句
+        "设置失败"，用户和我们都无从下手。
+        """
         try:
             if want:
                 # 保留用户手工加过的开关（比如 --serve），不替他把启动项改回去
                 autostart.enable(extra_args=autostart.current_extra_args())
             else:
                 autostart.disable()
-            ok = (autostart.state() == "enabled") == bool(want)
-            if not ok:
-                logx.warn("开机自启状态与预期不符：%s" % autostart.state())
-            return ok
         except Exception as e:
             logx.warn("设置开机自启失败：%s" % e)
-            return False
+            return False, str(e)
+
+        st = autostart.state()
+        if (st == "enabled") == bool(want):
+            return True, ""
+        logx.warn("开机自启状态与预期不符：%s" % st)
+        if st == "disabled":
+            return False, "启动项被「任务管理器 → 启动」禁用了，去那里打开"
+        return False, "启动项没生效（当前状态：%s）" % st

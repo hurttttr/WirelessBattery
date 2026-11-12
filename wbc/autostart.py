@@ -359,10 +359,23 @@ def enable(extra_args=""):
     """创建启动快捷方式，并确保它没被任务管理器禁用过。
 
     extra_args 追加在 `--tray` 后面，例如 " --serve"。
+
+    写完立刻读回来核对 —— 换台机器"自启设了但不生效"，基本都栽在两处：
+    目标路径压根不存在（程序被挪过、或者直接在压缩包里双击运行），
+    以及 .lnk 没真正落盘。与其让用户对着"设置失败"猜，不如当场说清楚。
     """
-    path = startup_lnk_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     target, arguments, workdir = launch_parts(windowed=True, extra_args=extra_args)
+    if not os.path.exists(target):
+        raise ShellLinkError("启动目标不存在：%s" % target)
+    if workdir and not os.path.isdir(workdir):
+        workdir = os.path.dirname(target)
+
+    path = startup_lnk_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError as e:
+        raise ShellLinkError("建不出启动文件夹 %s：%s" % (os.path.dirname(path), e))
+
     create_shortcut(
         path,
         target=target,
@@ -374,6 +387,15 @@ def enable(extra_args=""):
         # 打包后是 console 子系统，让 Shell 启动时直接把窗口藏起来，省掉那一下闪烁
         show_cmd=console.SW_HIDE if frozen() else None,
     )
+
+    try:
+        info = read_shortcut(path) or {}
+    except Exception as e:
+        raise ShellLinkError("快捷方式写完后读不回来：%s" % e)
+    written = info.get("target", "")
+    if not written or os.path.normcase(written) != os.path.normcase(target):
+        raise ShellLinkError("快捷方式内容不对（应指向 %s，实际 %s）" % (target, written or "空"))
+
     _clear_approved(LNK_NAME)
     dbg("已创建启动项", path)
     return path
