@@ -57,6 +57,7 @@ class BatteryApp(object):
         self.panel = None
         self.debug_win = None
         self.tray = None
+        self.bridge = None
         self._mutex = None
         self._pump_delay = PUMP_IDLE
         self._started = 0
@@ -101,18 +102,10 @@ class BatteryApp(object):
         if self.opts.show_panel or not self.opts.tray:
             self.open_panel(source="启动")
 
-        if getattr(self.opts, "serve", False):
+        # --serve 是本次运行的显式开关；settings.serve 是面板上勾过的持久设置
+        if getattr(self.opts, "serve", False) or self.settings.serve:
             # HTTP 桥必须在同一个进程里跑：两个进程同时读同一批 HID 会互相抢报文
-            from . import httpserve
-            self.bridge = httpserve.Bridge(
-                port=getattr(self.opts, "port", httpserve.DEFAULT_PORT),
-                ttl=getattr(self.opts, "serve_ttl", httpserve.DEFAULT_TTL))
-            try:
-                real = self.bridge.start()
-                dbg("HTTP 桥 http://127.0.0.1:%d/battery" % real)
-            except OSError as e:
-                logx.warn("HTTP 桥启动失败：%s" % e)
-                self.bridge = None
+            self.start_bridge()
 
         self._started = time.time()
         self.request_refresh("启动")
@@ -325,6 +318,61 @@ class BatteryApp(object):
         if self.tray is not None:
             self.tray.set_interval(self.interval)
         dbg("刷新间隔 -> %d 秒" % self.interval)
+
+    # ------------------------------------------------------------ 本地接口
+
+    def bridge_running(self):
+        return getattr(self, "bridge", None) is not None
+
+    def start_bridge(self):
+        """起本地 HTTP 接口（LiteMonitor 插件靠它取数）。返回 (ok, 说明)。"""
+        if self.bridge_running():
+            return True, "接口已在运行：http://127.0.0.1:%d/battery" % self.bridge.port
+        from . import httpserve
+        bridge = httpserve.Bridge(
+            port=getattr(self.opts, "port", httpserve.DEFAULT_PORT),
+            ttl=getattr(self.opts, "serve_ttl", httpserve.DEFAULT_TTL))
+        try:
+            real = bridge.start()
+        except OSError as e:
+            logx.warn("HTTP 桥启动失败：%s" % e)
+            return False, "接口起不来：%s" % e
+        self.bridge = bridge
+        dbg("HTTP 桥 http://127.0.0.1:%d/battery" % real)
+        return True, "接口已启动：http://127.0.0.1:%d/battery" % real
+
+    def stop_bridge(self):
+        bridge = getattr(self, "bridge", None)
+        if bridge is None:
+            return False
+        bridge.stop()
+        self.bridge = None
+        dbg("HTTP 桥已停止")
+        return True
+
+    def set_bridge(self, want):
+        """面板上勾/取消「本地接口」。返回 (ok, 说明)。
+
+        选择会写进 settings.json，下次启动照着恢复；关掉时顺手把自启参数里
+        遗留的 `--serve` 去掉，否则下次开机又被它拉起来，开关就成了摆设。
+        """
+        self.settings.serve = bool(want)
+        self.settings.save()
+
+        if want:
+            return self.start_bridge()
+
+        self.stop_bridge()
+        try:
+            if autostart.state() != "absent":
+                extra = autostart.current_extra_args()
+                if "--serve" in extra.split():
+                    rest = " ".join(a for a in extra.split() if a != "--serve")
+                    autostart.enable(extra_args=(" " + rest) if rest else "")
+                    return True, "接口已关闭，并从开机自启参数里移除了 --serve"
+        except Exception as e:
+            logx.warn("同步自启参数失败：%s" % e)
+        return True, "接口已关闭"
 
     def set_autostart(self, want):
         """用户点了复选框才动手；程序自己绝不"自动纠正"启动项。

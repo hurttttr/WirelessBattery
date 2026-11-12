@@ -90,6 +90,8 @@ python my_devices.py --once        # 读一次真实设备
 | 生成 LiteMonitor 插件 | `--make-plugin` |
 
 **托盘交互**：左键 = 立刻刷新，右键 / 双击 = 打开面板。
+面板底部还有两个开关：「本地接口」= 起停给 LiteMonitor 用的本地 HTTP 桥（不用再敲 `--serve`），
+「装插件」= 按当前设备生成插件并直接写进 LiteMonitor 的 plugins 目录。
 `--debug` 打调试信息，`--exit-after 秒` 用来自测退出是否干净。
 
 ---

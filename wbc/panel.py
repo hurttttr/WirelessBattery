@@ -126,6 +126,7 @@ class PanelWindow(tk.Toplevel):
         self._build()
         self._place()
         self.refresh_autostart()
+        self.refresh_bridge()
         self.refresh_interval()
         self.bind("<Configure>", self._on_configure)
 
@@ -187,6 +188,15 @@ class PanelWindow(tk.Toplevel):
             bg=theme.BG, fg=theme.TEXT, activebackground=theme.BG, selectcolor=theme.CARD,
             font=font(9), bd=0, highlightthickness=0, cursor="hand2")
         self.chk_auto.pack(side="left")
+
+        # LiteMonitor 插件靠本地 HTTP 接口取数；这里给它一个开关，
+        # 不用再去命令行敲 --serve（选择会存进 settings.json）
+        self.var_bridge = tk.IntVar(value=0)
+        self.chk_bridge = tk.Checkbutton(
+            foot, text="本地接口", variable=self.var_bridge, command=self.on_toggle_bridge,
+            bg=theme.BG, fg=theme.TEXT, activebackground=theme.BG, selectcolor=theme.CARD,
+            font=font(9), bd=0, highlightthickness=0, cursor="hand2")
+        self.chk_bridge.pack(side="left", padx=(S(10), 0))
 
         tk.Label(foot, text="间隔", bg=theme.BG, fg=theme.SUB, font=font(9)).pack(
             side="left", padx=(S(14), S(4)))
@@ -312,6 +322,10 @@ class PanelWindow(tk.Toplevel):
         else:
             self.chk_auto.configure(text="开机自启")
 
+    def refresh_bridge(self):
+        """只反映真实状态：接口线程是不是还活着。"""
+        self.var_bridge.set(1 if getattr(self.app, "bridge", None) is not None else 0)
+
     def refresh_interval(self):
         secs = self.app.interval
         for value, label in INTERVAL_CHOICES:
@@ -333,6 +347,12 @@ class PanelWindow(tk.Toplevel):
             self.set_status("已开启开机自启" if want else "已关闭开机自启")
         else:
             self.set_status("开机自启设置失败：%s" % (reason or "原因未知"), error=True)
+
+    def on_toggle_bridge(self):
+        want = bool(self.var_bridge.get())
+        ok, msg = self.app.set_bridge(want)
+        self.refresh_bridge()          # 失败时把勾选状态拉回真实情况
+        self.set_status(msg, error=not ok)
 
     def on_interval(self, _evt=None):
         label = self.var_interval.get()
@@ -403,9 +423,8 @@ class PanelWindow(tk.Toplevel):
     def _plugin_done(self, dst, note=""):
         extra = ""
         if getattr(self.app, "bridge", None) is None:
-            extra = ("\n\n提醒：LiteMonitor 是从本地接口取数的，当前实例没开这个接口。\n"
-                     "请用 --tray --serve 启动（自启就 --install --serve），"
-                     "否则插件会显示 ❌。")
+            extra = ("\n\n提醒：LiteMonitor 是从本地接口取数的，这个接口现在没开。\n"
+                     "面板左下角勾上「本地接口」再重载插件，否则会显示 ❌。")
         messagebox.showinfo(
             "插件已写入",
             "已写入：\n%s\n\n"

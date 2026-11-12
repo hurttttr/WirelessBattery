@@ -62,6 +62,9 @@ class Settings(object):
         self.interval = clamp_interval(data.get("interval", DEFAULT_INTERVAL))
         self.geometry = data.get("geometry") or ""
         self.last_panel = bool(data.get("last_panel", True))
+        # 本地 HTTP 接口（LiteMonitor 插件靠它取数）。面板上的开关会写回这里，
+        # 下次启动照着它恢复，所以 --serve 不用一直挂在自启参数里。
+        self.serve = bool(data.get("serve", False))
 
     def save(self):
         try:
@@ -69,6 +72,7 @@ class Settings(object):
                 "interval": self.interval,
                 "geometry": self.geometry,
                 "last_panel": self.last_panel,
+                "serve": self.serve,
             })
         except Exception:
             pass
