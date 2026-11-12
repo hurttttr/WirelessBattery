@@ -133,7 +133,16 @@ def create_shortcut(lnk_path, target, arguments="", workdir="",
 
 
 def read_shortcut(lnk_path):
-    """读回 .lnk 的 target / arguments / workdir（自检与诊断用）。"""
+    """读回 .lnk 的 target / arguments / workdir（自检与诊断用）。
+
+    文件不存在就返回空字典，不抛异常 —— 这是个"读"函数，调用方大多在
+    "还没有启动项"的时候问一句，没东西可读是正常情况，不是错误。
+    （曾经在这里抛过：新机器第一次勾选开机自启，current_extra_args() 去读
+    还不存在的 .lnk，IPersistFile::Load 报 0x80070002，被上层显示成
+    "开机自启设置失败"。）
+    """
+    if not lnk_path or not os.path.exists(lnk_path):
+        return {}
     _co_init()
     clsid = wx.guid_from_string(CLSID_ShellLink)
     iid_link = wx.guid_from_string(IID_IShellLinkW)
@@ -346,8 +355,15 @@ def current_extra_args(path=None):
 
     面板上勾选/取消「开机自启」时会整体重写快捷方式，这里把额外参数原样带过去，
     免得用户手工加过的 `--serve` 被悄悄抹掉。
+
+    没有启动项时返回空串 —— 这是"第一次开自启"的常见情况，不能因此让整个
+    勾选动作失败。
     """
-    info = read_shortcut(path or startup_lnk_path())
+    try:
+        info = read_shortcut(path or startup_lnk_path())
+    except Exception as e:
+        dbg("读旧启动项失败（按无额外参数处理）：%s" % e)
+        return ""
     if not info:
         return ""
     args = (info.get("arguments") or "").replace('"', " ").split()
