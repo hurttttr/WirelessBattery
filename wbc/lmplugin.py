@@ -9,6 +9,7 @@ LiteMonitor 的 output 列表是静态的：文件里写了哪几项，设置界
 import glob
 import json
 import os
+import shutil
 
 from . import proto
 
@@ -150,3 +151,31 @@ def write_plugin(keys, target, port=18763):
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write("\n")
     return data
+
+
+def install(keys, out_dir, target_dir=None, port=18763):
+    """生成插件 JSON，并复制进 LiteMonitor 的 plugins 目录。
+
+    target_dir 给了就直接用它（用户在面板上手动选的），否则按常见安装位置自动找。
+
+    返回 dict：
+        src    生成出来的文件 —— 一定会生成，写失败会抛 OSError
+        dst    真正写进 LiteMonitor 的路径；None 表示没找到目录或没写成功
+        dirs   这次考虑过的候选目录
+        error  写入失败的原因（多个目录时保留最后一条）
+    """
+    src = os.path.join(out_dir, PLUGIN_ID + ".json")
+    write_plugin(keys, src, port)
+
+    dirs = [target_dir] if target_dir else find_plugin_dirs()
+    dst, error = None, None
+    for folder in dirs:
+        try:
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, PLUGIN_ID + ".json")
+            shutil.copyfile(src, path)
+            dst = path
+            break
+        except OSError as e:
+            error = "%s：%s" % (folder, e)
+    return {"src": src, "dst": dst, "dirs": dirs, "error": error}

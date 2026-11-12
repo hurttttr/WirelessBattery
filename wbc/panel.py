@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """简洁面板：两张卡片，大号百分比 + 进度条 + 数据来源。"""
 
+import os
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, messagebox, ttk
 
+from . import app_dir
 from . import proto
 from . import theme
 from . import win32 as wx
@@ -199,6 +201,8 @@ class PanelWindow(tk.Toplevel):
         self.btn_quit.pack(side="right")
         self.btn_debug = self._flat_button(foot, "调试版", self.on_debug)
         self.btn_debug.pack(side="right", padx=(0, S(6)))
+        self.btn_plugin = self._flat_button(foot, "装插件", self.on_plugin)
+        self.btn_plugin.pack(side="right", padx=(0, S(6)))
 
     def _flat_button(self, master, text, command):
         return tk.Button(master, text=text, command=command, relief="flat", bd=0,
@@ -323,10 +327,12 @@ class PanelWindow(tk.Toplevel):
 
     def on_toggle_autostart(self):
         want = bool(self.var_auto.get())
-        ok = self.app.set_autostart(want)
+        ok, reason = self.app.set_autostart(want)
         self.refresh_autostart()
-        if not ok:
-            self.set_status("开机自启设置失败", error=True)
+        if ok:
+            self.set_status("已开启开机自启" if want else "已关闭开机自启")
+        else:
+            self.set_status("开机自启设置失败：%s" % (reason or "原因未知"), error=True)
 
     def on_interval(self, _evt=None):
         label = self.var_interval.get()
@@ -337,6 +343,77 @@ class PanelWindow(tk.Toplevel):
 
     def on_debug(self):
         self.app.open_debug()
+
+    def on_plugin(self):
+        """按当前插着的设备生成 LiteMonitor 插件，并复制进它的 plugins 目录。
+
+        插件的内容必须跟着"这台电脑上现在插了什么"走 —— 发布包里塞一份写死
+        设备清单的 JSON 只会让别人的 LiteMonitor 多出几行 ⛔，所以这里现生成。
+        """
+        from . import lmplugin, proto
+
+        keys = lmplugin.present_keys()
+        note = ""
+        if not keys:
+            if not messagebox.askyesno(
+                    "没检测到设备",
+                    "当前没插受支持的设备。\n\n"
+                    "要按支持的全部机型生成吗？没插的会显示成 ⛔。",
+                    parent=self):
+                return
+            keys = [p["key"] for p in proto.PROFILES]
+            note = "\n\n注意：这次是按全部机型生成的，没插的会显示 ⛔。"
+
+        out_dir = os.path.join(app_dir(), "litemonitor")
+        try:
+            res = lmplugin.install(keys, out_dir)
+        except OSError as e:
+            messagebox.showerror("生成失败", "插件文件写不出来：\n%s" % e, parent=self)
+            return
+
+        if res["dst"]:
+            self._plugin_done(res["dst"], note)
+            return
+
+        msg = "插件已生成：\n%s\n\n没自动找到 LiteMonitor 的 plugins 目录。" % res["src"]
+        if res["dirs"]:
+            msg += "\n\n找过这些位置，但写不进去：\n" + "\n".join(res["dirs"])
+        if res["error"]:
+            msg += "\n\n最后一个错误：\n" + res["error"]
+        msg += "\n\n要手动选一下目录吗？（一般是 LiteMonitor\\resources\\plugins）"
+        if not messagebox.askyesno("没找到 LiteMonitor", msg, parent=self):
+            return
+
+        picked = filedialog.askdirectory(
+            title="选择 LiteMonitor 的 resources\\plugins 目录", parent=self)
+        if not picked:
+            return
+        try:
+            res = lmplugin.install(keys, out_dir, target_dir=picked)
+        except OSError as e:
+            messagebox.showerror("写入失败", "%s" % e, parent=self)
+            return
+        if res["dst"]:
+            self._plugin_done(res["dst"], note)
+        else:
+            messagebox.showerror(
+                "写入失败", "写不进 %s：\n%s" % (picked, res["error"] or "未知原因"),
+                parent=self)
+
+    def _plugin_done(self, dst, note=""):
+        extra = ""
+        if getattr(self.app, "bridge", None) is None:
+            extra = ("\n\n提醒：LiteMonitor 是从本地接口取数的，当前实例没开这个接口。\n"
+                     "请用 --tray --serve 启动（自启就 --install --serve），"
+                     "否则插件会显示 ❌。")
+        messagebox.showinfo(
+            "插件已写入",
+            "已写入：\n%s\n\n"
+            "接着去 LiteMonitor：\n"
+            "  设置 → 插件 → 重载插件\n"
+            "重载后没出来，就退出 LiteMonitor 再打开。%s%s" % (dst, note, extra),
+            parent=self)
+        self.set_status("插件已写入，去 LiteMonitor「设置 → 插件 → 重载插件」")
 
     def on_quit(self):
         self.app.quit_app()
