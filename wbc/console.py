@@ -22,6 +22,7 @@ console 子系统在双击 / 开机自启时会被系统配一个新控制台，
 """
 
 import ctypes
+import os
 import sys
 
 SW_HIDE = 0
@@ -34,9 +35,12 @@ _OUTPUT_FLAGS = frozenset((
     "--debug", "--debug-ui", "--version", "-h", "--help",
 ))
 
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_MAX_CONSOLE_PROCS = 32
+
 
 def _k32():
-    """kernel32 的三个相关函数。
+    """kernel32 的这几个函数。
 
     在 x64 上 GetConsoleWindow 返回的是指针，不声明 restype 会被截成 32 位，
     后面 ShowWindow 拿到一个残缺句柄，静默失败。
@@ -45,6 +49,13 @@ def _k32():
     k32.GetConsoleWindow.restype = ctypes.c_void_p
     k32.GetConsoleProcessList.restype = ctypes.c_uint32
     k32.GetConsoleProcessList.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32]
+    k32.OpenProcess.restype = ctypes.c_void_p
+    k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_uint32]
+    k32.QueryFullProcessImageNameW.restype = ctypes.c_bool
+    k32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint32)]
+    k32.CloseHandle.restype = ctypes.c_bool
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
     return k32
 
 
@@ -56,6 +67,22 @@ def _user32():
     return u32
 
 
+def _image_of(pid):
+    """某个 pid 的可执行文件全路径；拿不到返回 ""。"""
+    k32 = _k32()
+    handle = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        buf = ctypes.create_unicode_buffer(1024)
+        size = ctypes.c_uint32(1024)
+        if not k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return ""
+        return buf.value
+    finally:
+        k32.CloseHandle(handle)
+
+
 def quiet_argv(argv=None):
     """这次启动有没有东西要显示？没有就是托盘模式，可以藏窗口。"""
     argv = sys.argv[1:] if argv is None else argv
@@ -63,16 +90,32 @@ def quiet_argv(argv=None):
 
 
 def console_is_ours():
-    """控制台上只挂着本进程 → 它是系统为了启动我们新建的（双击 / 自启）。
+    """这个控制台是"系统为本程序新建的"吗？
 
-    从 shell 启动时父进程也在同一个控制台上，列表长度 ≥ 2，这里返回 False。
+    只数进程个数不够：PyInstaller 的单文件版先起一个引导进程解包，再拉起子
+    进程，两个进程共用同一个控制台。按"个数 > 1 就是跟 shell 共享"判断，单
+    文件版的黑窗永远藏不掉——这正是用户报的那个现象。
+
+    所以改成看"除我们之外还有没有别的程序"：全都是同一个 exe 才算是自己的；
+    只要混进来一个别的（cmd / powershell / explorer），就一根手指都不碰。
     """
-    hwnd = _k32().GetConsoleWindow()
-    if not hwnd:
+    k32 = _k32()
+    if not k32.GetConsoleWindow():
         return False
-    pids = (ctypes.c_uint32 * 16)()
-    n = _k32().GetConsoleProcessList(pids, 16)
-    return 0 < n <= 1
+    pids = (ctypes.c_uint32 * _MAX_CONSOLE_PROCS)()
+    n = k32.GetConsoleProcessList(pids, _MAX_CONSOLE_PROCS)
+    if not 0 < n <= _MAX_CONSOLE_PROCS:
+        return False                    # 0 或超出缓冲（数量异常）→ 保守起见不动
+    mine = os.path.normcase(os.path.abspath(sys.executable))
+    me = os.getpid()
+    for i in range(n):
+        pid = pids[i]
+        if pid == me:
+            continue
+        other = _image_of(pid)
+        if not other or os.path.normcase(os.path.abspath(other)) != mine:
+            return False
+    return True
 
 
 def hide_if_ours():
