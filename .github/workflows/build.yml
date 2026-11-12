@@ -129,7 +129,10 @@ jobs:
     steps:
       # gh 靠当前目录的 git 仓库判断"操作哪个仓库"，没有 checkout 就会以
       # "not a git repository" 立刻失败。--repo 是第二层保险。
+      # fetch-depth: 0 是为了拿到历史 tag —— 下面要用上一个 tag 生成"本次更新"。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -151,10 +154,17 @@ jobs:
           fi
           command -v gh >/dev/null || { echo "跑器上没有 gh" >&2; exit 1; }
 
-          # 正文来自仓库里的 .github/release-notes.md（两个包怎么选、怎么用），
-          # 末尾补一条改动链接。说明跟着代码走，不靠每次手写。
+          # 正文 = 本次更新（从上个 tag 到现在的提交标题）+ 仓库里的固定说明
+          # + 改动链接。都不用手写，跟着代码走。
           notes=$(mktemp)
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
+            if [ -n "$prev" ]; then
+              echo "## 本次更新（${prev} → ${GITHUB_REF_NAME}）"
+              echo
+              git log --no-merges --pretty='- %s' "${prev}..${GITHUB_REF_NAME}"
+              echo
+            fi
             cat .github/release-notes.md
             echo
             echo '---'

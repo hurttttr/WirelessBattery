@@ -168,9 +168,11 @@ def main():
         raise SystemExit("没找到产物：%s" % target)
 
     folder = os.path.dirname(target)
+    # 单文件版量它自己那份；量 dist/ 会把同时存在的目录版一起算进去
+    measured = target if args.onefile else folder
     print("")
     print("产物：%s" % target)
-    print("体积：%.1f MB" % (tree_size(folder) / 1048576.0))
+    print("体积：%.1f MB" % (tree_size(measured) / 1048576.0))
     if not args.onefile:
         print("分发：整个 %s 目录一起给（exe 离不开旁边的 _internal\\）" % NAME)
 
