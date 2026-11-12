@@ -385,46 +385,98 @@ class PanelWindow(tk.Toplevel):
             note = "\n\n注意：这次是按全部机型生成的，没插的会显示 ⛔。"
 
         out_dir = os.path.join(app_dir(), "litemonitor")
+        # 找目录可能要扫一下磁盘，先把鼠标换成等待状态，别让人以为没反应
+        self.configure(cursor="watch")
+        self.update_idletasks()
         try:
             res = lmplugin.install(keys, out_dir)
         except OSError as e:
             messagebox.showerror("生成失败", "插件文件写不出来：\n%s" % e, parent=self)
             return
+        finally:
+            self.configure(cursor="")
 
         if res["dst"]:
-            self._plugin_done(res["dst"], note)
+            self._plugin_done(res["dst"], note, res.get("solo"))
             return
 
-        msg = "插件已生成：\n%s\n\n没自动找到 LiteMonitor 的 plugins 目录。" % res["src"]
+        if not self._plugin_ask_target(res, keys, out_dir, note):
+            return
+
+    def _plugin_ask_target(self, res, keys, out_dir, note):
+        """自动没找到 → 请用户指一下 LiteMonitor 在哪儿，然后重写一次。"""
+        from . import lmplugin
+
+        msg = "插件文件已经生成：\n%s\n\n没找到 LiteMonitor 的插件目录。\n\n" % res["src"]
         if res["dirs"]:
-            msg += "\n\n找过这些位置，但写不进去：\n" + "\n".join(res["dirs"])
+            msg += "找过这些地方，但写不进去：\n" + "\n".join(res["dirs"])
+        else:
+            msg += ("已试过：正在运行的 LiteMonitor、注册表里的安装/运行痕迹、\n"
+                    "开始菜单和桌面快捷方式、各磁盘浅层扫描。")
         if res["error"]:
             msg += "\n\n最后一个错误：\n" + res["error"]
-        msg += "\n\n要手动选一下目录吗？（一般是 LiteMonitor\\resources\\plugins）"
+        msg += ("\n\n要手动指定吗？\n"
+                "  是 → 选 LiteMonitor.exe（最省事，目录我会自己算）\n"
+                "  否 → 放弃这次写入")
         if not messagebox.askyesno("没找到 LiteMonitor", msg, parent=self):
-            return
+            return False
 
-        picked = filedialog.askdirectory(
-            title="选择 LiteMonitor 的 resources\\plugins 目录", parent=self)
+        initial = ""
+        if res["dirs"]:
+            initial = os.path.dirname(res["dirs"][0])
+        elif os.environ.get("ProgramFiles"):
+            initial = os.environ["ProgramFiles"]
+
+        picked = filedialog.askopenfilename(
+            title="选择 LiteMonitor.exe（找不到就取消，改选插件目录）",
+            parent=self, initialdir=initial or None,
+            filetypes=[("LiteMonitor", "LiteMonitor.exe"), ("程序", "*.exe")])
         if not picked:
-            return
+            picked = filedialog.askdirectory(
+                title="选择 LiteMonitor 的 resources\\plugins 目录",
+                parent=self, initialdir=initial or None)
+        if not picked:
+            return False
+
+        target = lmplugin.normalize_plugin_dir(picked)
+        if not target:
+            messagebox.showerror(
+                "这个位置不对",
+                "从\n%s\n看不出 LiteMonitor 的插件目录在哪儿。\n\n"
+                "请直接选 LiteMonitor.exe，或者选它旁边的 resources\\plugins。"
+                % picked, parent=self)
+            return False
+
+        if not lmplugin.looks_like_plugin_dir(target):
+            if not messagebox.askyesno(
+                    "确认目录",
+                    "准备把插件写进：\n%s\n\n"
+                    "这个目录看起来不太像 LiteMonitor 的插件目录"
+                    "（里面没有别的插件，旁边也没有 LiteMonitor.exe）。\n"
+                    "仍然写入吗？" % target, parent=self):
+                return False
+
         try:
-            res = lmplugin.install(keys, out_dir, target_dir=picked)
+            res = lmplugin.install(keys, out_dir, target_dir=target)
         except OSError as e:
             messagebox.showerror("写入失败", "%s" % e, parent=self)
-            return
+            return False
         if res["dst"]:
-            self._plugin_done(res["dst"], note)
-        else:
-            messagebox.showerror(
-                "写入失败", "写不进 %s：\n%s" % (picked, res["error"] or "未知原因"),
-                parent=self)
+            self._plugin_done(res["dst"], note, res.get("solo"))
+            return True
+        messagebox.showerror(
+            "写入失败", "写不进 %s：\n%s" % (target, res["error"] or "未知原因"),
+            parent=self)
+        return False
 
-    def _plugin_done(self, dst, note=""):
+    def _plugin_done(self, dst, note="", solo=False):
         extra = ""
+        if solo:
+            extra += ("\n\n注意：这个目录里原先没有别的插件。万一 LiteMonitor 里还是看不到，\n"
+                      "可能是路径猜歪了 —— 再点一次「装插件」，在弹窗里直接选 LiteMonitor.exe。")
         if getattr(self.app, "bridge", None) is None:
-            extra = ("\n\n提醒：LiteMonitor 是从本地接口取数的，这个接口现在没开。\n"
-                     "面板左下角勾上「本地接口」再重载插件，否则会显示 ❌。")
+            extra += ("\n\n提醒：LiteMonitor 是从本地接口取数的，这个接口现在没开。\n"
+                      "面板左下角勾上「本地接口」再重载插件，否则会显示 ❌。")
         messagebox.showinfo(
             "插件已写入",
             "已写入：\n%s\n\n"

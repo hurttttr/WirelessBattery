@@ -78,7 +78,25 @@ python my_devices.py --make-plugin
 2. 写到项目里的 `litemonitor/PeripheralBattery.json`；
 3. 自动找到 LiteMonitor 的 `resources/plugins/` 并覆盖安装。
 
-找不到安装目录时会提示你用 `--plugin-dir "D:/Tools/LiteMonitor/resources/plugins"` 指定。
+找 LiteMonitor 装在哪，按这个顺序试（越靠前越准）：
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | 上次用过的目录 | 写成功一次就记进 `settings.json` 的 `plugin_dir`，之后直接命中 |
+| 2 | 正在运行的 LiteMonitor 进程 | 进程自己报的镜像路径，最准 |
+| 3 | 注册表 | 卸载项、`App Paths`、`MuiCache`（跑过一次就留痕，便携版也躲不掉） |
+| 4 | 开始菜单 / 桌面快捷方式 | 解析 `.lnk` 的目标 |
+| 5 | 浅扫固定磁盘 | 盘根往下三层，限时 1.5 秒；数据盘优先，系统盘垫后 |
+
+都找不到时，面板上点「装插件」会弹出窗口让你**直接选 `LiteMonitor.exe`**
+（目录它自己算），也可以取消后改选 `resources\plugins`。选偏了会被自动收敛：
+安装根目录、`resources`、`resources\plugins`、甚至 exe 本身，都能认。
+
+命令行等价写法（`--plugin-dir` 同样接受上面这几种写法）：
+
+```bash
+python my_devices.py --make-plugin --plugin-dir "D:/Tools/LiteMonitor"
+```
 
 然后在 LiteMonitor 里：「设置 → 插件 → 重载插件」，找到**「无线外设电量」**。
 

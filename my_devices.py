@@ -317,13 +317,18 @@ def run_make_plugin(plugin_dir=None, port=18763):
         lmplugin.display_for(k, [k])[0] for k in keys)))
 
     target_dir = plugin_dir
-    if not target_dir:
+    if target_dir:
+        # 允许直接给安装根目录 / resources / exe，统一收敛到 resources\plugins
+        target_dir = lmplugin.normalize_plugin_dir(target_dir) or target_dir
+    else:
         found = lmplugin.find_plugin_dirs()
         if found:
             target_dir = found[0]
             if len(found) > 1:
-                print("  找到多个 LiteMonitor：%s" % "，".join(found))
-                print("  用最近安装的那个；要指定别的请加 --plugin-dir")
+                print("  找到 %d 个 LiteMonitor，按可信度用第一个" % len(found))
+                for f in found:
+                    print("    %s" % f)
+                print("  要指定别的请加 --plugin-dir")
         else:
             print("  没找到 LiteMonitor 的 plugins 目录，请手动拷过去，或用 --plugin-dir 指定。")
 

@@ -296,6 +296,21 @@ class NOTIFYICONDATAW(ctypes.Structure):
     ]
 
 
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", w.DWORD),
+        ("cntUsage", w.DWORD),
+        ("th32ProcessID", w.DWORD),
+        ("th32DefaultHeapID", ULONG_PTR),
+        ("th32ModuleID", w.DWORD),
+        ("cntThreads", w.DWORD),
+        ("th32ParentProcessID", w.DWORD),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", w.DWORD),
+        ("szExeFile", w.WCHAR * 260),
+    ]
+
+
 class ICONINFO(ctypes.Structure):
     _fields_ = [
         ("fIcon", w.BOOL),
@@ -367,6 +382,22 @@ kernel32.ReleaseMutex.argtypes = [w.HANDLE]
 kernel32.ReleaseMutex.restype = w.BOOL
 kernel32.GetTickCount64.argtypes = []
 kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+# 枚举进程：用来问"某个程序现在跑在哪儿"（比猜安装位置靠谱得多）
+kernel32.CreateToolhelp32Snapshot.argtypes = [w.DWORD, w.DWORD]
+kernel32.CreateToolhelp32Snapshot.restype = w.HANDLE
+kernel32.Process32FirstW.argtypes = [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32FirstW.restype = w.BOOL
+kernel32.Process32NextW.argtypes = [w.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32NextW.restype = w.BOOL
+kernel32.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+kernel32.OpenProcess.restype = w.HANDLE
+kernel32.QueryFullProcessImageNameW.argtypes = [w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)]
+kernel32.QueryFullProcessImageNameW.restype = w.BOOL
+kernel32.GetLogicalDrives.argtypes = []
+kernel32.GetLogicalDrives.restype = w.DWORD
+kernel32.GetDriveTypeW.argtypes = [w.LPCWSTR]
+kernel32.GetDriveTypeW.restype = w.UINT
 
 setupapi.SetupDiGetClassDevsW.argtypes = [ctypes.POINTER(GUID), w.LPCWSTR, w.HWND, w.DWORD]
 setupapi.SetupDiGetClassDevsW.restype = w.HANDLE
@@ -487,6 +518,66 @@ LOGPIXELSX = 88
 
 def last_error():
     return ctypes.get_last_error()
+
+
+# ---------------------------------------------------------------- 进程 / 盘符
+
+TH32CS_SNAPPROCESS = 0x00000002
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+DRIVE_FIXED = 3
+
+
+def image_of(pid):
+    """某个 pid 的可执行文件全路径；拿不到返回 ""。"""
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        buf = ctypes.create_unicode_buffer(1024)
+        size = w.DWORD(1024)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return ""
+        return buf.value
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def process_images(name=None):
+    """枚举进程 → [(pid, exe 全路径)]。name 给了就只挑同名的（不分大小写）。
+
+    "这个程序到底装在哪"最可靠的答案就在正在跑的那个进程里 —— 注册表、
+    快捷方式、磁盘扫描都是猜，只有进程是可执行文件自己报上来的路径。
+    """
+    out = []
+    snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID_HANDLE_VALUE:
+        return out
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        ok = kernel32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            if not name or entry.szExeFile.lower() == name.lower():
+                path = image_of(entry.th32ProcessID)
+                if path:
+                    out.append((entry.th32ProcessID, path))
+            ok = kernel32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snap)
+    return out
+
+
+def fixed_drives():
+    """本机固定磁盘的根（U 盘 / 光驱 / 网络盘不算：扫它们又慢又没意义）。"""
+    mask = kernel32.GetLogicalDrives()
+    out = []
+    for i in range(26):
+        if not (mask >> i) & 1:
+            continue
+        root = "%s:\\" % chr(ord("A") + i)
+        if kernel32.GetDriveTypeW(root) == DRIVE_FIXED:
+            out.append(root)
+    return out
 
 
 def get_dpi_scale():

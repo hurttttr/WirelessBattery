@@ -54,21 +54,21 @@ python my_devices.py --status   # 里面的"开机自启"一节会显示它实�
 | `wbc/app.py` | 343 | 进程装配：单实例锁、线程模型、面板唤起、退出路径 | 改运行时生命周期 |
 | `wbc/proto.py` | 1625 | **协议层**：`PROFILES` 设备清单、各厂商读取器、`read_all()`、自检 | **适配新设备主要改这里** |
 | `wbc/hid.py` | 456 | HID 枚举、`HidController`（写）、`OverlappedReader`（异步读） | 极少需要改 |
-| `wbc/win32.py` | 611 | ctypes 封装：SetupAPI / User32 / GDI / Shell / COM | 极少需要改 |
+| `wbc/win32.py` | 702 | ctypes 封装：SetupAPI / User32 / GDI / Shell / COM | 极少需要改 |
 | `wbc/tray.py` | 367 | 托盘宿主窗口、`SetTimer`、`Shell_NotifyIcon` | 加托盘交互 |
 | `wbc/icons.py` | 346 | 纯 Python 光栅化数字图标 → `HICON` | 改图标样式 |
-| `wbc/panel.py` | 350 | 简洁面板（两张/多张卡片） | 改面板布局 |
+| `wbc/panel.py` | 497 | 简洁面板（两张/多张卡片） | 改面板布局 |
 | `wbc/debugui.py` | 465 | 完整调试版（列设备、转储、探测、标定） | 加调试工具 |
 | `wbc/httpserve.py` | 211 | 本地 HTTP 桥（给 LiteMonitor 这类宿主） | 改 JSON 字段 |
-| `wbc/lmplugin.py` | 152 | 按当前设备生成 LiteMonitor 插件 JSON | 改插件图标/命名 |
+| `wbc/lmplugin.py` | 521 | 按当前设备生成 LiteMonitor 插件 JSON | 改插件图标/命名 |
 | `wbc/autostart.py` | 368 | 启动文件夹 `.lnk`（纯 ctypes COM） | 改自启行为 |
 | `wbc/links.py` | 141 | 桌面目录/文件链接（symlink → junction → 硬链接） | 极少 |
-| `wbc/settings.py` | 128 | `settings.json` / `calibration.json` | 加配置项 |
+| `wbc/settings.py` | 136 | `settings.json` / `calibration.json` | 加配置项 |
 | `wbc/theme.py` | 82 | DPI 缩放、字体、配色 | 改视觉 |
 | `wbc/logx.py` | 46 | 调试输出开关 | 极少 |
 | `PROTOCOLS.md` | 592 | 六台设备的协议汇编 + 逆向方法论 | **适配完新设备必须更新** |
-| `LITEMONITOR.md` | 283 | LiteMonitor 接入手册 | 改插件行为时更新 |
-| `README.md` | 218 | 面向人的门面：特性、设备表、CLI、文档索引、怎么让 AI 接手 | 加设备 / 改 CLI / 改定位时同步 |
+| `LITEMONITOR.md` | 306 | LiteMonitor 接入手册 | 改插件行为时更新 |
+| `README.md` | 222 | 面向人的门面：特性、设备表、CLI、文档索引、怎么让 AI 接手 | 加设备 / 改 CLI / 改定位时同步 |
 
 > 行数只作为规模参考，会随改动漂移；要准确值就 `wc -l wbc/*.py my_devices.py *.md`。
 
@@ -123,6 +123,11 @@ python my_devices.py --make-plugin      # 按当前设备生成插件并自动�
 ```
 
 然后让用户在 LiteMonitor 里「设置 → 插件 → 重载插件」。细节见 `LITEMONITOR.md`。
+
+插件目录的探测顺序是「上次用过的 `settings.plugin_dir` → 运行中的进程 → 注册表
+（卸载项 / App Paths / MuiCache）→ 快捷方式 → 浅扫固定磁盘」；都不中时面板会弹窗
+让用户直接选 `LiteMonitor.exe`。用户手选的路径要先用 `lmplugin.normalize_plugin_dir()`
+收敛（安装根目录 / `resources` / `plugins` / exe 都认），别直接往选中的目录里写。
 
 > **同一时刻只能有一个进程读 HID**。两个进程同时读同一批接口会互相抢报文，
 > 表现为"数据忽有忽无"。所以桥和托盘要在**同一个进程**里（`--tray --serve`）。

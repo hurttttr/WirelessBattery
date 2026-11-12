@@ -65,6 +65,9 @@ class Settings(object):
         # 本地 HTTP 接口（LiteMonitor 插件靠它取数）。面板上的开关会写回这里，
         # 下次启动照着它恢复，所以 --serve 不用一直挂在自启参数里。
         self.serve = bool(data.get("serve", False))
+        # LiteMonitor 的 resources\plugins 目录。自动找过一次（或用户手选过）就
+        # 记住，下次点「装插件」直接命中 —— 便携版装在哪儿只有用户自己清楚。
+        self.plugin_dir = str(data.get("plugin_dir") or "")
 
     def save(self):
         try:
@@ -73,6 +76,7 @@ class Settings(object):
                 "geometry": self.geometry,
                 "last_panel": self.last_panel,
                 "serve": self.serve,
+                "plugin_dir": self.plugin_dir,
             })
         except Exception:
             pass
