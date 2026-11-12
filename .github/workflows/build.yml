@@ -112,23 +112,35 @@ jobs:
     permissions:
       contents: write
     steps:
+      # gh 靠当前目录的 git 仓库判断"操作哪个仓库"，没有 checkout 就会以
+      # "not a git repository" 立刻失败。--repo 是第二层保险。
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: 列出待发布文件
-        run: ls -lh artifacts
-
-      # 用 gh 而不是第三方 action：少一个供应链依赖
       - name: 创建或更新 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          set -euo pipefail
+          ls -lh artifacts
+
+          shopt -s nullglob
+          files=(artifacts/*.zip)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "没找到待发布的 zip —— download-artifact 这一步可能没捞到东西" >&2
+            exit 1
+          fi
+          command -v gh >/dev/null || { echo "跑器上没有 gh" >&2; exit 1; }
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release 已存在，覆盖附件"
-            gh release upload "$GITHUB_REF_NAME" artifacts/*.zip --clobber
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" artifacts/*.zip \
-              --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
           fi
