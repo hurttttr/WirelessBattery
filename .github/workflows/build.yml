@@ -151,11 +151,23 @@ jobs:
           fi
           command -v gh >/dev/null || { echo "跑器上没有 gh" >&2; exit 1; }
 
+          # 正文来自仓库里的 .github/release-notes.md（两个包怎么选、怎么用），
+          # 末尾补一条改动链接。说明跟着代码走，不靠每次手写。
+          notes=$(mktemp)
+          {
+            cat .github/release-notes.md
+            echo
+            echo '---'
+            echo
+            echo "**完整改动**：https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}"
+          } > "$notes"
+
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release 已存在，覆盖附件"
+            echo "Release 已存在：更新正文 + 覆盖附件"
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
             gh release upload "$GITHUB_REF_NAME" "${files[@]}" \
               --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$GITHUB_REF_NAME" "${files[@]}" \
-              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+              --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$notes"
           fi
